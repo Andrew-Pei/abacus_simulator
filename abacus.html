@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>在线算盘模拟器 (Chinese Abacus)</title>
+    <style>
+        :root {
+            --bead-color: #e6b800;
+            --bead-shadow: #b38f00;
+            --rod-color: #333;
+            --frame-color: #5c4033;
+            --frame-border: #3e2b22;
+            --beam-color: #3e2b22;
+            --bg-color: #f4f4f4;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            user-select: none; /* 防止点击时选中文本 */
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        /* 显示数值的区域 */
+        #display-container {
+            background: #fff;
+            padding: 15px 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+            font-size: 2em;
+            font-weight: bold;
+            font-family: 'Courier New', Courier, monospace;
+            color: #333;
+            min-width: 200px;
+            text-align: center;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        #val { color: #d32f2f; }
+
+        /* 算盘外框 */
+        .abacus {
+            background-color: var(--frame-color);
+            border: 8px solid var(--frame-border);
+            border-radius: 6px;
+            padding: 10px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.4);
+            display: inline-block;
+            position: relative;
+        }
+
+        /* 算盘的所有档（列）容器 */
+        .rods-container {
+            display: flex;
+            background-color: transparent;
+        }
+
+        /* 单个档（列） */
+        .rod {
+            width: 50px;
+            height: 320px;
+            position: relative;
+            margin: 0 2px;
+        }
+
+        /* 贯穿档位的棍子 */
+        .rod::before {
+            content: '';
+            position: absolute;
+            left: 50%;
+            top: 0;
+            bottom: 0;
+            width: 6px;
+            background: linear-gradient(90deg, #222, #666, #222);
+            transform: translateX(-50%);
+            z-index: 0;
+            border-radius: 3px;
+        }
+
+        /* 横梁 (Beam) */
+        .beam {
+            position: absolute;
+            top: 100px; /* 分隔上下珠的位置 */
+            left: 0;
+            right: 0;
+            height: 12px;
+            background-color: var(--beam-color);
+            z-index: 10;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            border-top: 2px solid #4a3b32;
+            border-bottom: 2px solid #2a1f1a;
+        }
+
+        /* 算珠通用样式 */
+        .bead {
+            width: 44px;
+            height: 26px;
+            background: radial-gradient(circle at 30% 30%, #ffd700, var(--bead-color), var(--bead-shadow));
+            border-radius: 50% / 40%; /* 扁圆形状 */
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1;
+            cursor: pointer;
+            box-shadow: 1px 2px 3px rgba(0,0,0,0.4);
+            transition: top 0.2s ease-out; /* 动画效果 */
+        }
+
+        .bead:hover {
+            filter: brightness(1.1);
+        }
+
+        /* === 天珠 (上珠) === */
+        /* 初始位置：靠上 */
+        .bead.heaven {
+            /* 默认在顶部 */
+        }
+        /* 天珠激活：向下移动靠梁 */
+        .bead.heaven.active {
+            /* 通过JS控制具体的top值 */
+        }
+
+        /* === 地珠 (下珠) === */
+        /* 初始位置：靠下 */
+        .bead.earth {
+            /* 默认在底部 */
+        }
+        /* 地珠激活：向上移动靠梁 */
+        .bead.earth.active {
+            /* 通过JS控制具体的top值 */
+        }
+
+        /* 按钮 */
+        .controls {
+            margin-top: 20px;
+        }
+
+        button {
+            background-color: #5c4033;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            font-size: 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        button:hover {
+            background-color: #7a5c4c;
+        }
+
+        /* 档位数值指示 */
+        .rod-value {
+            position: absolute;
+            bottom: -25px;
+            width: 100%;
+            text-align: center;
+            color: #666;
+            font-size: 12px;
+        }
+
+    </style>
+</head>
+<body>
+
+    <h1>算盘模拟器 (Suanpan)</h1>
+
+    <div id="display-container">
+        <span>数值:</span>
+        <span id="val">0</span>
+    </div>
+
+    <div class="abacus">
+        <div class="beam"></div>
+        <div class="rods-container" id="abacus-content"></div>
+    </div>
+
+    <div class="controls">
+        <button onclick="resetAbacus()">清零 (Reset)</button>
+    </div>
+
+    <script>
+        // 配置：13档算盘，上2珠，下5珠
+        const ROD_COUNT = 13;
+        const HEAVEN_BEADS = 2;
+        const EARTH_BEADS = 5;
+        
+        // 布局参数 (像素)
+        const BEAD_HEIGHT = 26; 
+        const BEAD_SPACING = 2; // 珠子间的微小间隙
+        const BEAM_Y = 100;     // 横梁的Y坐标 (top)
+        const BEAM_HEIGHT = 12;
+        
+        // 上珠区域的高度 (0 到 BEAM_Y)
+        // 下珠区域的起始 (BEAM_Y + BEAM_HEIGHT)
+        
+        // 状态存储：每个档位的数值
+        // state[col] = { heaven: number_active, earth: number_active }
+        // 实际上我们只需要根据珠子的位置来计算，但为了逻辑简单，我们直接操作DOM类名，
+        // 并通过类名计算数值。
+
+        const container = document.getElementById('abacus-content');
+        const valDisplay = document.getElementById('val');
+
+        // 初始化算盘
+        function initAbacus() {
+            container.innerHTML = '';
+            
+            for (let i = 0; i < ROD_COUNT; i++) {
+                const rod = document.createElement('div');
+                rod.className = 'rod';
+                rod.dataset.col = i;
+
+                // --- 创建天珠 (上珠) ---
+                // 索引 0 是最上面的, 1 是靠近梁的
+                for (let h = 0; h < HEAVEN_BEADS; h++) {
+                    const bead = document.createElement('div');
+                    bead.className = 'bead heaven';
+                    bead.dataset.type = 'heaven';
+                    bead.dataset.index = h; // 0 是顶，1 是底
+                    bead.dataset.col = i;
+                    // 初始位置：靠上
+                    bead.style.top = (10 + h * (BEAD_HEIGHT + BEAD_SPACING)) + 'px';
+                    
+                    // 点击事件
+                    bead.onclick = () => toggleHeaven(i, h);
+                    rod.appendChild(bead);
+                }
+
+                // --- 创建地珠 (下珠) ---
+                // 索引 0 是靠近梁的, 4 是最底下的
+                for (let e = 0; e < EARTH_BEADS; e++) {
+                    const bead = document.createElement('div');
+                    bead.className = 'bead earth';
+                    bead.dataset.type = 'earth';
+                    bead.dataset.index = e; 
+                    bead.dataset.col = i;
+                    // 初始位置：靠下
+                    // 容器总高320. 
+                    // 下珠区域起点: 112px. 
+                    // 底部留白一点，从底部往上算比较容易
+                    // 或者是：Base Y + specific logic
+                    const bottomBase = 310;
+                    const beadY = bottomBase - ((EARTH_BEADS - 1 - e) * (BEAD_HEIGHT + BEAD_SPACING));
+                    bead.style.top = (beadY - BEAD_HEIGHT) + 'px';
+
+                    bead.onclick = () => toggleEarth(i, e);
+                    rod.appendChild(bead);
+                }
+                
+                // 调试用的单列数值显示（可选）
+                // const label = document.createElement('div');
+                // label.className = 'rod-value';
+                // label.id = `rod-val-${i}`;
+                // label.innerText = '0';
+                // rod.appendChild(label);
+
+                container.appendChild(rod);
+            }
+            updateDisplay();
+        }
+
+        // === 逻辑核心：移动珠子 ===
+
+        // 处理天珠点击 (上部分)
+        // index 0: 远离梁, index 1: 靠近梁
+        // 只有向下移动(靠近梁)才算数
+        function toggleHeaven(col, index) {
+            const rod = getRod(col);
+            const beads = rod.querySelectorAll('.bead.heaven');
+            const clickedBead = beads[index];
+            const isDown = clickedBead.classList.contains('active'); // active 表示在下方（计数）
+
+            // 逻辑：
+            // 如果点击的是上面的珠子(0)，且它是UP状态 -> 移到DOWN。如果下面的珠子(1)还在UP，1也要被推到DOWN。
+            // 如果点击的是下面的珠子(1)，且它是DOWN状态 -> 移到UP。如果上面的珠子(0)在DOWN，0也要被推到UP。
+            
+            if (!isDown) {
+                // 动作：向下拨 (增加数值/生效)
+                // 当前珠子变 active
+                clickedBead.classList.add('active');
+                // 如果点击的是上方的珠子(0)，它移动会推动下方的珠子(1)
+                for (let i = index; i < HEAVEN_BEADS; i++) {
+                    beads[i].classList.add('active');
+                    animateHeaven(beads[i], i, true);
+                }
+            } else {
+                // 动作：向上拨 (减少数值/复位)
+                clickedBead.classList.remove('active');
+                // 如果点击的是下方的珠子(1)，它移动会推动上方的珠子(0)
+                for (let i = 0; i <= index; i++) {
+                    beads[i].classList.remove('active');
+                    animateHeaven(beads[i], i, false);
+                }
+            }
+            updateDisplay();
+        }
+
+        // 处理地珠点击 (下部分)
+        // index 0: 靠近梁, index 4: 远离梁
+        // 只有向上移动(靠近梁)才算数
+        function toggleEarth(col, index) {
+            const rod = getRod(col);
+            const beads = rod.querySelectorAll('.bead.earth');
+            const clickedBead = beads[index];
+            const isUp = clickedBead.classList.contains('active'); // active 表示在上方（计数）
+
+            if (!isUp) {
+                // 动作：向上拨 (生效)
+                // 点击的珠子及其上方所有非active的珠子都要上去
+                for (let i = 0; i <= index; i++) {
+                    beads[i].classList.add('active');
+                    animateEarth(beads[i], i, true);
+                }
+            } else {
+                // 动作：向下拨 (复位)
+                // 点击的珠子及其下方所有active的珠子都要下去
+                for (let i = index; i < EARTH_BEADS; i++) {
+                    beads[i].classList.remove('active');
+                    animateEarth(beads[i], i, false);
+                }
+            }
+            updateDisplay();
+        }
+
+        // === 动画位置计算 ===
+
+        function animateHeaven(bead, index, isActive) {
+            // 原始位置(UP): 顶部留空
+            const upY = 10 + index * (BEAD_HEIGHT + BEAD_SPACING);
+            // 激活位置(DOWN): 靠近梁 (BEAM_Y = 100)
+            const downY = BEAM_Y - ((HEAVEN_BEADS - index) * (BEAD_HEIGHT + BEAD_SPACING)) - 2;
+            
+            bead.style.top = (isActive ? downY : upY) + 'px';
+        }
+
+        function animateEarth(bead, index, isActive) {
+            // 梁下边缘
+            const beamBottom = BEAM_Y + BEAM_HEIGHT;
+            
+            // 激活位置(UP): 紧贴梁下方
+            const upY = beamBottom + 2 + (index * (BEAD_HEIGHT + BEAD_SPACING));
+            
+            // 原始位置(DOWN): 底部堆叠
+            const bottomBase = 310;
+            const downY = bottomBase - ((EARTH_BEADS - 1 - index) * (BEAD_HEIGHT + BEAD_SPACING)) - BEAD_HEIGHT;
+
+            bead.style.top = (isActive ? upY : downY) + 'px';
+        }
+
+        // === 辅助函数 ===
+
+        function getRod(col) {
+            return container.children[col];
+        }
+
+        function updateDisplay() {
+            let total = 0;
+            let placeValue = Math.pow(10, ROD_COUNT - 1); // 最左边是最高位? 通常算盘是个位在右边
+
+            // 重新计算位权，最右边为个位 (10^0)
+            let currentValString = "";
+
+            for (let i = 0; i < ROD_COUNT; i++) {
+                const rod = getRod(i);
+                let rodVal = 0;
+
+                // 计算天珠 (+5 each)
+                const heavenActive = rod.querySelectorAll('.bead.heaven.active').length;
+                rodVal += heavenActive * 5;
+
+                // 计算地珠 (+1 each)
+                const earthActive = rod.querySelectorAll('.bead.earth.active').length;
+                rodVal += earthActive;
+
+                // 简单的字符串拼接逻辑用于显示
+                // 如果算盘用作纯整数，去掉前导零
+                currentValString += rodVal;
+            }
+            
+            // 格式化数字：移除前导零，如果全是0则显示0
+            const finalNum = parseInt(currentValString);
+            valDisplay.innerText = finalNum.toLocaleString();
+        }
+
+        function resetAbacus() {
+            // 重新渲染或重置所有状态
+            const allBeads = document.querySelectorAll('.bead');
+            allBeads.forEach(b => {
+                b.classList.remove('active');
+                // 强制触发位置重置
+                if (b.dataset.type === 'heaven') {
+                    animateHeaven(b, parseInt(b.dataset.index), false);
+                } else {
+                    animateEarth(b, parseInt(b.dataset.index), false);
+                }
+            });
+            updateDisplay();
+        }
+
+        // 启动
+        initAbacus();
+
+    </script>
+</body>
+</html>
